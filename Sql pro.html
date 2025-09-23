@@ -1,0 +1,831 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Attendance System with SQL</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .modal-backdrop {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; visibility: hidden; transition: opacity 0.3s, visibility 0.3s;
+            z-index: 50;
+        }
+        .modal-backdrop.active { opacity: 1; visibility: visible; }
+        .modal-content {
+            background-color: white; border-radius: 0.5rem;
+            padding: 1.5rem; width: 90%; max-width: 500px;
+            transform: translateY(-20px); transition: transform 0.3s;
+        }
+        .modal-backdrop.active .modal-content { transform: translateY(0); }
+        .loading { 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            flex-direction: column; 
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="loading">
+        <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mb-4"></div>
+        <p class="text-gray-600">Initializing SQL Database...</p>
+    </div>
+
+    <!-- Main Application -->
+    <div id="main-app" class="flex h-screen" style="display: none;">
+        <!-- Sidebar -->
+        <aside class="w-16 md:w-64 bg-white shadow-lg flex flex-col py-6">
+            <div class="h-12 flex items-center justify-center md:justify-start md:pl-6 border-b border-gray-200 mb-6">
+                <span class="text-3xl font-bold text-blue-600">A</span>
+                <span class="hidden md:inline ml-3 text-lg font-bold">Student Attendance Tracker</span>
+            </div>
+            <nav class="flex-grow">
+                <a href="#" data-view="dashboard" class="nav-link flex items-center p-3 md:p-4 text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors rounded-r-full active-nav">
+                    <span class="text-2xl">📋</span>
+                    <span class="hidden md:inline ml-4 font-medium">Dashboard</span>
+                </a>
+                <a href="#" data-view="students" class="nav-link flex items-center p-3 md:p-4 text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors rounded-r-full">
+                    <span class="text-2xl">🎓</span>
+                    <span class="hidden md:inline ml-4 font-medium">Students</span>
+                </a>
+                <a href="#" data-view="classes" class="nav-link flex items-center p-3 md:p-4 text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors rounded-r-full">
+                    <span class="text-2xl">📚</span>
+                    <span class="hidden md:inline ml-4 font-medium">Classes</span>
+                </a>
+                <a href="#" data-view="record" class="nav-link flex items-center p-3 md:p-4 text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors rounded-r-full">
+                    <span class="text-2xl">✍</span>
+                    <span class="hidden md:inline ml-4 font-medium">Record</span>
+                </a>
+                <a href="#" data-view="reports" class="nav-link flex items-center p-3 md:p-4 text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors rounded-r-full">
+                    <span class="text-2xl">📊</span>
+                    <span class="hidden md:inline ml-4 font-medium">Reports</span>
+                </a>
+                <a href="#" data-view="sql" class="nav-link flex items-center p-3 md:p-4 text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors rounded-r-full">
+                    <span class="text-2xl">💾</span>
+                    <span class="hidden md:inline ml-4 font-medium">SQL Console</span>
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 overflow-auto p-6 md:p-10">
+            <!-- Dashboard View -->
+            <div id="dashboard-view" class="view-content active-view">
+                <h1 class="text-3xl font-bold mb-6">Dashboard</h1>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div class="bg-white p-6 rounded-xl shadow-md border border-gray-200">
+                        <p class="text-sm font-semibold text-gray-500">Total Students</p>
+                        <p id="total-students" class="text-4xl font-bold mt-2">0</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-md border border-gray-200">
+                        <p class="text-sm font-semibold text-gray-500">Total Classes</p>
+                        <p id="total-classes" class="text-4xl font-bold mt-2">0</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-md border border-gray-200">
+                        <p class="text-sm font-semibold text-gray-500">Total Records</p>
+                        <p id="total-records" class="text-4xl font-bold mt-2">0</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Students View -->
+            <div id="students-view" class="view-content hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <h1 class="text-3xl font-bold">Students</h1>
+                    <button id="add-student-btn" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-lg hover:bg-blue-700 transition-colors">Add Student</button>
+                </div>
+                <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                    <table class="min-w-full">
+                        <thead class="bg-gray-50 border-b border-gray-200">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ID</th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
+                                <th class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="student-list" class="bg-white divide-y divide-gray-200">
+                            <!-- Student data will be injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Classes View -->
+            <div id="classes-view" class="view-content hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <h1 class="text-3xl font-bold">Classes</h1>
+                    <button id="add-class-btn" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-lg hover:bg-blue-700 transition-colors">Add Class</button>
+                </div>
+                <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                    <table class="min-w-full">
+                        <thead class="bg-gray-50 border-b border-gray-200">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ID</th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Class Name</th>
+                                <th class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="class-list" class="bg-white divide-y divide-gray-200">
+                            <!-- Class data will be injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Record View -->
+            <div id="record-view" class="view-content hidden">
+                <h1 class="text-3xl font-bold mb-6">Record Attendance</h1>
+                <div class="bg-white p-6 rounded-xl shadow-md border border-gray-200 mb-6">
+                    <h2 class="text-2xl font-bold mb-4">Record Class Attendance</h2>
+                    <div class="flex flex-col md:flex-row md:items-end gap-4 mb-4">
+                        <div class="flex-1">
+                            <label for="record-class" class="block text-sm font-medium text-gray-700">Select a Class</label>
+                            <select id="record-class" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                <!-- Class options will be injected here -->
+                            </select>
+                        </div>
+                        <div class="flex-1">
+                            <label for="record-date" class="block text-sm font-medium text-gray-700">Date</label>
+                            <input type="date" id="record-date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        </div>
+                    </div>
+                    <div id="record-students-container" class="mt-4">
+                        <!-- Student attendance list will be injected here -->
+                    </div>
+                    <div class="mt-6">
+                        <button id="save-attendance-btn" class="w-full bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg shadow-lg hover:bg-blue-700 transition-colors">Save Attendance</button>
+                        <p id="save-message" class="text-center mt-2 text-sm text-green-600 hidden">Attendance saved successfully!</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Reports View -->
+            <div id="reports-view" class="view-content hidden">
+                <h1 class="text-3xl font-bold mb-6">Attendance Reports</h1>
+                <div class="bg-white p-6 rounded-xl shadow-md border border-gray-200">
+                    <label for="report-class" class="block text-sm font-medium text-gray-700">Select a Class to View Report</label>
+                    <select id="report-class" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <!-- Class options will be injected here -->
+                    </select>
+                    <div id="report-results" class="mt-6 hidden">
+                        <h3 id="report-title" class="text-xl font-semibold mb-4"></h3>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full">
+                                <thead class="bg-gray-50 border-b border-gray-200">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Student</th>
+                                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+                                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="report-table-body" class="bg-white divide-y divide-gray-200">
+                                    <!-- Report rows will be injected here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <p id="no-report-selected" class="text-gray-500 text-center mt-6">Please select a class to view its attendance report.</p>
+                </div>
+            </div>
+
+            <!-- SQL Console View -->
+            <div id="sql-view" class="view-content hidden">
+                <h1 class="text-3xl font-bold mb-6">SQL Console</h1>
+                <div class="bg-white p-6 rounded-xl shadow-md border border-gray-200 mb-6">
+                    <h2 class="text-xl font-semibold mb-4">Execute SQL Queries</h2>
+                    <div class="mb-4">
+                        <label for="sql-query" class="block text-sm font-medium text-gray-700 mb-2">SQL Query</label>
+                        <textarea id="sql-query" rows="6" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="SELECT * FROM students;"></textarea>
+                    </div>
+                    <button id="execute-sql-btn" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-lg hover:bg-blue-700 transition-colors">Execute Query</button>
+                    <div id="sql-results" class="mt-6 hidden">
+                        <h3 class="text-lg font-semibold mb-2">Results:</h3>
+                        <div id="sql-output" class="bg-gray-50 p-4 rounded-lg overflow-auto max-h-96"></div>
+                    </div>
+                </div>
+                
+                <div class="bg-white p-6 rounded-xl shadow-md border border-gray-200">
+                    <h2 class="text-xl font-semibold mb-4">Database Schema</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <h3 class="font-semibold text-blue-600 mb-2">students</h3>
+                            <ul class="text-sm text-gray-600">
+                                <li>• id (INTEGER PRIMARY KEY)</li>
+                                <li>• name (TEXT NOT NULL)</li>
+                            </ul>
+                        </div>
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <h3 class="font-semibold text-blue-600 mb-2">classes</h3>
+                            <ul class="text-sm text-gray-600">
+                                <li>• id (INTEGER PRIMARY KEY)</li>
+                                <li>• name (TEXT NOT NULL)</li>
+                            </ul>
+                        </div>
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <h3 class="font-semibold text-blue-600 mb-2">attendance_records</h3>
+                            <ul class="text-sm text-gray-600">
+                                <li>• id (INTEGER PRIMARY KEY)</li>
+                                <li>• student_id (INTEGER)</li>
+                                <li>• class_id (INTEGER)</li>
+                                <li>• attendance_date (TEXT)</li>
+                                <li>• status (TEXT)</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Modals -->
+    <div id="student-modal" class="modal-backdrop">
+        <div class="modal-content">
+            <h2 id="student-modal-title" class="text-2xl font-bold mb-4">Add Student</h2>
+            <form id="student-form">
+                <input type="hidden" id="student-id">
+                <div class="mb-4">
+                    <label for="student-name" class="block text-sm font-medium text-gray-700">Student Name</label>
+                    <input type="text" id="student-name" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="close-modal-btn bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Cancel</button>
+                    <button type="submit" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div id="class-modal" class="modal-backdrop">
+        <div class="modal-content">
+            <h2 id="class-modal-title" class="text-2xl font-bold mb-4">Add Class</h2>
+            <form id="class-form">
+                <input type="hidden" id="class-id">
+                <div class="mb-4">
+                    <label for="class-name" class="block text-sm font-medium text-gray-700">Class Name</label>
+                    <input type="text" id="class-name" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="close-modal-btn bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Cancel</button>
+                    <button type="submit" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="confirm-modal" class="modal-backdrop">
+        <div class="modal-content">
+            <h2 class="text-xl font-bold mb-4">Confirm Deletion</h2>
+            <p id="confirm-message" class="mb-6">Are you sure you want to delete this item?</p>
+            <div class="flex justify-end gap-2">
+                <button id="confirm-cancel-btn" class="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Cancel</button>
+                <button id="confirm-delete-btn" class="bg-red-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-red-700 transition-colors">Delete</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+// Global variables
+let db = null;
+let SQL = null;
+let confirmCallback = null;
+
+// Initialize SQL.js and create database
+async function initDatabase() {
+    try {
+        SQL = await initSqlJs({
+            locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+        });
+        
+        db = new SQL.Database();
+        
+        db.run(`
+            CREATE TABLE IF NOT EXISTS students (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL
+            );
+        `);
+        
+        db.run(`
+            CREATE TABLE IF NOT EXISTS classes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL
+            );
+        `);
+        
+        db.run(`
+            CREATE TABLE IF NOT EXISTS attendance_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER,
+                class_id INTEGER,
+                attendance_date TEXT NOT NULL,
+                status TEXT NOT NULL,
+                FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+                FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE
+            );
+        `);
+        
+        db.run(`
+            INSERT INTO students (name) VALUES 
+                ('John Doe'),
+                ('Jane Smith'),
+                ('Michael Johnson'),
+                ('Emily Davis'),
+                ('David Wilson');
+        `);
+        
+        db.run(`
+            INSERT INTO classes (name) VALUES 
+                ('Intro to Programming'),
+                ('Web Development Basics'),
+                ('Data Structures');
+        `);
+        
+        const students = executeSQL('SELECT id FROM students');
+        const classes = executeSQL('SELECT id FROM classes');
+        
+        students.forEach(student => {
+            classes.forEach(cls => {
+                db.run(`
+                    INSERT INTO attendance_records (student_id, class_id, attendance_date, status)
+                    VALUES (?, ?, ?, ?);
+                `, [student.id, cls.id, '2023-01-01', 'Present']);
+            });
+        });
+
+        console.log('Database initialized successfully');
+        return true;
+    } catch (error) {
+        console.error('Error initializing database:', error);
+        return false;
+    }
+}
+
+// Execute SQL query and return results
+function executeSQL(query, params = []) {
+    try {
+        if (query.trim().toUpperCase().startsWith('SELECT')) {
+            const stmt = db.prepare(query);
+            const results = [];
+            stmt.bind(params);
+            while (stmt.step()) {
+                results.push(stmt.getAsObject());
+            }
+            stmt.free();
+            return results;
+        } else {
+            db.run(query, params);
+            return { changes: db.getRowsModified() };
+        }
+    } catch (error) {
+        console.error('SQL Error:', error);
+        throw error;
+    }
+}
+
+// Show a custom confirmation modal
+function showConfirmModal(message, callback) {
+    const confirmModal = document.getElementById('confirm-modal');
+    document.getElementById('confirm-message').textContent = message;
+    confirmCallback = callback;
+    confirmModal.classList.add('active');
+}
+
+// Application state
+const appState = {
+    currentView: 'dashboard'
+};
+
+// DOM elements
+let studentList, classList, recordClassSelect, recordDateInput, recordStudentsContainer;
+let saveAttendanceBtn, saveMessage, reportClassSelect, reportResultsDiv, reportTitle;
+let reportTableBody, noReportSelected, studentModal, studentModalTitle, studentForm;
+let studentIdInput, studentNameInput, classModal, classModalTitle, classForm;
+let classIdInput, classNameInput, sqlQuery, executeSqlBtn, sqlResults, sqlOutput;
+let confirmModal, confirmCancelBtn, confirmDeleteBtn;
+
+// Initialize application
+document.addEventListener('DOMContentLoaded', async () => {
+    const dbInitialized = await initDatabase();
+    
+    if (!dbInitialized) {
+        document.getElementById('loading-screen').innerHTML = `
+            <div class="text-red-600 text-center">
+                <p class="text-xl font-semibold mb-2">Database Initialization Failed</p>
+                <p>Please refresh the page to try again.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    document.getElementById('loading-screen').style.display = 'none';
+    document.getElementById('main-app').style.display = 'flex';
+    
+    initDOMElements();
+    setupEventListeners();
+    showView('dashboard-view');
+});
+
+function initDOMElements() {
+    studentList = document.getElementById('student-list');
+    classList = document.getElementById('class-list');
+    recordClassSelect = document.getElementById('record-class');
+    recordDateInput = document.getElementById('record-date');
+    recordStudentsContainer = document.getElementById('record-students-container');
+    saveAttendanceBtn = document.getElementById('save-attendance-btn');
+    saveMessage = document.getElementById('save-message');
+    reportClassSelect = document.getElementById('report-class');
+    reportResultsDiv = document.getElementById('report-results');
+    reportTitle = document.getElementById('report-title');
+    reportTableBody = document.getElementById('report-table-body');
+    noReportSelected = document.getElementById('no-report-selected');
+    studentModal = document.getElementById('student-modal');
+    studentModalTitle = document.getElementById('student-modal-title');
+    studentForm = document.getElementById('student-form');
+    studentIdInput = document.getElementById('student-id');
+    studentNameInput = document.getElementById('student-name');
+    classModal = document.getElementById('class-modal');
+    classModalTitle = document.getElementById('class-modal-title');
+    classForm = document.getElementById('class-form');
+    classIdInput = document.getElementById('class-id');
+    classNameInput = document.getElementById('class-name');
+    sqlQuery = document.getElementById('sql-query');
+    executeSqlBtn = document.getElementById('execute-sql-btn');
+    sqlResults = document.getElementById('sql-results');
+    sqlOutput = document.getElementById('sql-output');
+    confirmModal = document.getElementById('confirm-modal');
+    confirmCancelBtn = document.getElementById('confirm-cancel-btn');
+    confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+}
+
+function setupEventListeners() {
+    document.querySelectorAll('.nav-link').forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            document.querySelectorAll('.nav-link').forEach(nav => nav.classList.remove('active-nav'));
+            link.classList.add('active-nav');
+            showView(`${link.dataset.view}-view`);
+        });
+    });
+    
+    document.getElementById('add-student-btn').addEventListener('click', () => {
+        studentModalTitle.textContent = 'Add Student';
+        studentIdInput.value = '';
+        studentNameInput.value = '';
+        studentModal.classList.add('active');
+    });
+    
+    studentForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const id = studentIdInput.value;
+        const name = studentNameInput.value.trim();
+        if (!name) return;
+        try {
+            if (id) {
+                executeSQL('UPDATE students SET name = ? WHERE id = ?', [name, parseInt(id)]);
+            } else {
+                executeSQL('INSERT INTO students (name) VALUES (?)', [name]);
+            }
+            studentModal.classList.remove('active');
+            renderStudents();
+            renderDashboard();
+        } catch (error) {
+            console.error('Error saving student: ', error);
+        }
+    });
+    
+    studentList.addEventListener('click', (e) => {
+        if (e.target.classList.contains('edit-student')) {
+            const id = parseInt(e.target.dataset.id);
+            const student = executeSQL('SELECT * FROM students WHERE id = ?', [id])[0];
+            if (student) {
+                studentModalTitle.textContent = 'Edit Student';
+                studentIdInput.value = student.id;
+                studentNameInput.value = student.name;
+                studentModal.classList.add('active');
+            }
+        } else if (e.target.classList.contains('delete-student')) {
+            const id = parseInt(e.target.dataset.id);
+            showConfirmModal('Are you sure you want to delete this student? All related attendance records will also be deleted.', () => {
+                try {
+                    executeSQL('DELETE FROM students WHERE id = ?', [id]);
+                    renderStudents();
+                    renderDashboard();
+                } catch (error) {
+                    console.error('Error deleting student: ', error);
+                }
+            });
+        }
+    });
+    
+    document.getElementById('add-class-btn').addEventListener('click', () => {
+        classModalTitle.textContent = 'Add Class';
+        classIdInput.value = '';
+        classNameInput.value = '';
+        classModal.classList.add('active');
+    });
+    
+    classForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const id = classIdInput.value;
+        const name = classNameInput.value.trim();
+        if (!name) return;
+        try {
+            if (id) {
+                executeSQL('UPDATE classes SET name = ? WHERE id = ?', [name, parseInt(id)]);
+            } else {
+                executeSQL('INSERT INTO classes (name) VALUES (?)', [name]);
+            }
+            classModal.classList.remove('active');
+            renderClasses();
+            renderDashboard();
+        } catch (error) {
+            console.error('Error saving class: ', error);
+        }
+    });
+    
+    classList.addEventListener('click', (e) => {
+        if (e.target.classList.contains('edit-class')) {
+            const id = parseInt(e.target.dataset.id);
+            const cls = executeSQL('SELECT * FROM classes WHERE id = ?', [id])[0];
+            if (cls) {
+                classModalTitle.textContent = 'Edit Class';
+                classIdInput.value = cls.id;
+                classNameInput.value = cls.name;
+                classModal.classList.add('active');
+            }
+        } else if (e.target.classList.contains('delete-class')) {
+            const id = parseInt(e.target.dataset.id);
+            showConfirmModal('Are you sure you want to delete this class? All related attendance records will also be deleted.', () => {
+                try {
+                    executeSQL('DELETE FROM classes WHERE id = ?', [id]);
+                    renderClasses();
+                    renderDashboard();
+                } catch (error) {
+                    console.error('Error deleting class: ', error);
+                }
+            });
+        }
+    });
+    
+    document.querySelectorAll('.close-modal-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            studentModal.classList.remove('active');
+            classModal.classList.remove('active');
+        });
+    });
+    
+    confirmCancelBtn.addEventListener('click', () => {
+        confirmModal.classList.remove('active');
+        confirmCallback = null;
+    });
+
+    confirmDeleteBtn.addEventListener('click', () => {
+        confirmModal.classList.remove('active');
+        if (confirmCallback) {
+            confirmCallback();
+        }
+    });
+    
+    recordClassSelect.addEventListener('change', () => {
+        renderAttendanceList(recordClassSelect.value, recordDateInput.value);
+    });
+    
+    recordDateInput.addEventListener('change', () => {
+        renderAttendanceList(recordClassSelect.value, recordDateInput.value);
+    });
+    
+    saveAttendanceBtn.addEventListener('click', () => {
+        saveAttendanceRecords();
+    });
+    
+    reportClassSelect.addEventListener('change', () => {
+        const classId = reportClassSelect.value;
+        if (classId) {
+            renderReportForClass(classId);
+        } else {
+            reportResultsDiv.classList.add('hidden');
+            noReportSelected.classList.remove('hidden');
+        }
+    });
+    
+    executeSqlBtn.addEventListener('click', () => {
+        executeCustomSQL();
+    });
+}
+
+function showView(viewId) {
+    document.querySelectorAll('.view-content').forEach(view => {
+        view.classList.add('hidden');
+    });
+    document.getElementById(viewId).classList.remove('hidden');
+    
+    if (viewId === 'dashboard-view') {
+        renderDashboard();
+    } else if (viewId === 'students-view') {
+        renderStudents();
+    } else if (viewId === 'classes-view') {
+        renderClasses();
+    } else if (viewId === 'record-view') {
+        renderRecordView();
+    } else if (viewId === 'reports-view') {
+        renderReportsView();
+    } else if (viewId === 'sql-view') {
+        // No rendering needed, console view is static
+    }
+}
+
+function renderDashboard() {
+    const totalStudents = executeSQL('SELECT COUNT(*) AS count FROM students')[0].count;
+    const totalClasses = executeSQL('SELECT COUNT(*) AS count FROM classes')[0].count;
+    const totalRecords = executeSQL('SELECT COUNT(*) AS count FROM attendance_records')[0].count;
+    
+    document.getElementById('total-students').textContent = totalStudents;
+    document.getElementById('total-classes').textContent = totalClasses;
+    document.getElementById('total-records').textContent = totalRecords;
+}
+
+function renderStudents() {
+    const students = executeSQL('SELECT * FROM students ORDER BY name');
+    studentList.innerHTML = '';
+    students.forEach(student => {
+        const row = document.createElement('tr');
+        row.className = 'hover:bg-gray-50';
+        row.innerHTML = `
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${student.id}</td>
+            <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${student.name}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                <button data-id="${student.id}" class="edit-student text-blue-600 hover:text-blue-900 mr-4">Edit</button>
+                <button data-id="${student.id}" class="delete-student text-red-600 hover:text-red-900">Delete</button>
+            </td>
+        `;
+        studentList.appendChild(row);
+    });
+}
+
+function renderClasses() {
+    const classes = executeSQL('SELECT * FROM classes ORDER BY name');
+    classList.innerHTML = '';
+    classes.forEach(cls => {
+        const row = document.createElement('tr');
+        row.className = 'hover:bg-gray-50';
+        row.innerHTML = `
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${cls.id}</td>
+            <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${cls.name}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                <button data-id="${cls.id}" class="edit-class text-blue-600 hover:text-blue-900 mr-4">Edit</button>
+                <button data-id="${cls.id}" class="delete-class text-red-600 hover:text-red-900">Delete</button>
+            </td>
+        `;
+        classList.appendChild(row);
+    });
+}
+
+function renderRecordView() {
+    const classes = executeSQL('SELECT * FROM classes ORDER BY name');
+    recordClassSelect.innerHTML = classes.map(cls => `<option value="${cls.id}">${cls.name}</option>`).join('');
+    recordDateInput.value = new Date().toISOString().substring(0, 10);
+    renderAttendanceList(recordClassSelect.value, recordDateInput.value);
+}
+
+function renderAttendanceList(classId, date) {
+    if (!classId) return;
+    
+    const students = executeSQL('SELECT * FROM students ORDER BY name');
+    let html = '';
+    if (students.length === 0) {
+        html = '<p class="text-gray-500 text-center">No students found.</p>';
+    } else {
+        html = `
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        `;
+        students.forEach(student => {
+            const record = executeSQL('SELECT status FROM attendance_records WHERE student_id = ? AND class_id = ? AND attendance_date = ?', [student.id, classId, date])[0];
+            const status = record ? record.status : 'Absent';
+            
+            html += `
+                <div class="bg-gray-50 p-4 rounded-lg shadow-sm flex justify-between items-center">
+                    <p class="font-medium">${student.name}</p>
+                    <select data-student-id="${student.id}" class="status-select rounded-md border-gray-300">
+                        <option value="Present" ${status === 'Present' ? 'selected' : ''}>Present</option>
+                        <option value="Absent" ${status === 'Absent' ? 'selected' : ''}>Absent</option>
+                        <option value="Late" ${status === 'Late' ? 'selected' : ''}>Late</option>
+                    </select>
+                </div>
+            `;
+        });
+        html += '</div>';
+    }
+    recordStudentsContainer.innerHTML = html;
+    saveAttendanceBtn.classList.remove('hidden');
+}
+
+function saveAttendanceRecords() {
+    const classId = recordClassSelect.value;
+    const date = recordDateInput.value;
+    if (!classId || !date) return;
+    
+    const selects = recordStudentsContainer.querySelectorAll('.status-select');
+    try {
+        selects.forEach(select => {
+            const studentId = parseInt(select.dataset.studentId);
+            const status = select.value;
+            
+            const existingRecord = executeSQL('SELECT id FROM attendance_records WHERE student_id = ? AND class_id = ? AND attendance_date = ?', [studentId, classId, date]);
+            
+            if (existingRecord.length > 0) {
+                executeSQL('UPDATE attendance_records SET status = ? WHERE id = ?', [status, existingRecord[0].id]);
+            } else {
+                executeSQL('INSERT INTO attendance_records (student_id, class_id, attendance_date, status) VALUES (?, ?, ?, ?)', [studentId, classId, date, status]);
+            }
+        });
+        saveMessage.classList.remove('hidden');
+        setTimeout(() => saveMessage.classList.add('hidden'), 3000);
+        renderDashboard();
+    } catch (error) {
+        console.error('Error saving attendance: ', error);
+    }
+}
+
+function renderReportsView() {
+    const classes = executeSQL('SELECT * FROM classes ORDER BY name');
+    reportClassSelect.innerHTML = '<option value="">Select a class</option>' + classes.map(cls => `<option value="${cls.id}">${cls.name}</option>`).join('');
+    reportResultsDiv.classList.add('hidden');
+    noReportSelected.classList.remove('hidden');
+}
+
+function renderReportForClass(classId) {
+    const className = executeSQL('SELECT name FROM classes WHERE id = ?', [classId])[0].name;
+    const reportData = executeSQL(`
+        SELECT s.name AS student_name, a.attendance_date, a.status
+        FROM attendance_records a
+        JOIN students s ON a.student_id = s.id
+        WHERE a.class_id = ?
+        ORDER BY a.attendance_date DESC, s.name
+    `, [classId]);
+    
+    reportTitle.textContent = `Attendance Report for ${className}`;
+    reportTableBody.innerHTML = '';
+    
+    if (reportData.length === 0) {
+        reportTableBody.innerHTML = `<tr><td colspan="3" class="text-center py-4 text-gray-500">No attendance records for this class.</td></tr>`;
+    } else {
+        reportData.forEach(record => {
+            const row = document.createElement('tr');
+            row.className = 'hover:bg-gray-50';
+            const statusColor = record.status === 'Present' ? 'text-green-600' : 'text-red-600';
+            row.innerHTML = `
+                <td class="px-6 py-4 whitespace-nowrap">${record.student_name}</td>
+                <td class="px-6 py-4 whitespace-nowrap">${record.attendance_date}</td>
+                <td class="px-6 py-4 whitespace-nowrap font-semibold ${statusColor}">${record.status}</td>
+            `;
+            reportTableBody.appendChild(row);
+        });
+    }
+    
+    noReportSelected.classList.add('hidden');
+    reportResultsDiv.classList.remove('hidden');
+}
+
+function executeCustomSQL() {
+    const query = sqlQuery.value.trim();
+    if (!query) return;
+
+    try {
+        const results = executeSQL(query);
+        sqlResults.classList.remove('hidden');
+        if (Array.isArray(results)) {
+            if (results.length > 0) {
+                const headers = Object.keys(results[0]);
+                let tableHtml = `<table class="min-w-full">
+                    <thead class="bg-gray-50"><tr>
+                        ${headers.map(h => `<th class="px-4 py-2 text-left text-xs text-gray-500">${h}</th>`).join('')}
+                    </tr></thead><tbody>`;
+                results.forEach(row => {
+                    tableHtml += `<tr>${headers.map(h => `<td class="px-4 py-2 text-sm text-gray-900">${row[h]}</td>`).join('')}</tr>`;
+                });
+                tableHtml += '</tbody></table>';
+                sqlOutput.innerHTML = tableHtml;
+            } else {
+                sqlOutput.innerHTML = '<p class="text-gray-500">Query returned no results.</p>';
+            }
+        } else {
+            sqlOutput.innerHTML = `<p class="text-green-600 font-medium">Query executed successfully. Rows changed: ${results.changes}</p>`;
+        }
+    } catch (error) {
+        sqlResults.classList.remove('hidden');
+        sqlOutput.innerHTML = `<p class="text-red-600">Error: ${error.message}</p>`;
+    }
+}
+</script>
+</body>
+</html>
